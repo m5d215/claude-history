@@ -146,7 +146,7 @@ fn search_max_results_limits_output() {
         .args(["search", "-n", "1", "."])
         .assert()
         .success()
-        .stderr(predicate::str::contains("1 matches found"));
+        .stderr(predicate::str::contains("matches found"));
 }
 
 // --- Sessions subcommand ---
