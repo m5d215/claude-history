@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde_json::Value;
 
-use crate::jsonl::{extract_text_only, extract_tool_names};
+use crate::jsonl::{extract_text_only, extract_tool_summaries};
 use crate::output::format_timestamp;
 use crate::search::BUF_SIZE;
 
@@ -167,10 +167,10 @@ pub fn extract_messages_from_file(
                     }
                 }
 
-                // Extract tool_use names for summary
-                let tool_names = extract_tool_names(&record);
-                if !tool_names.is_empty() {
-                    for name in &tool_names {
+                // Extract tool_use summaries
+                let tool_summaries = extract_tool_summaries(&record);
+                if !tool_summaries.is_empty() {
+                    for name in &tool_summaries {
                         messages.push(ConversationMessage {
                             timestamp: timestamp.clone(),
                             role: "tool".to_string(),
@@ -397,7 +397,7 @@ mod tests {
         let msgs = extract_messages_from_file(&path, "sess-1").unwrap();
         assert_eq!(msgs.len(), 2);
         assert_eq!(msgs[0].role, "tool");
-        assert_eq!(msgs[0].content, "Bash");
+        assert_eq!(msgs[0].content, "Bash: ls");
         assert_eq!(msgs[1].role, "assistant");
         assert_eq!(msgs[1].content, "Let me check");
     }

@@ -130,8 +130,9 @@ pub fn extract_text_only<'a>(record: &'a Value, buf: &'a mut String) -> &'a str 
     buf.as_str()
 }
 
-/// Extract tool_use names from an assistant message's content array.
-pub fn extract_tool_names(record: &Value) -> Vec<String> {
+/// Extract tool_use summaries from an assistant message's content array.
+/// Returns "ToolName: key_arg" for each tool_use block.
+pub fn extract_tool_summaries(record: &Value) -> Vec<String> {
     let Some(content) = record
         .get("message")
         .and_then(|m| m.get("content"))
@@ -144,13 +145,46 @@ pub fn extract_tool_names(record: &Value) -> Vec<String> {
         .iter()
         .filter_map(|item| {
             let item_type = item.get("type").and_then(|v| v.as_str())?;
-            if item_type == "tool_use" {
-                item.get("name").and_then(|v| v.as_str()).map(String::from)
+            if item_type != "tool_use" {
+                return None;
+            }
+            let name = item.get("name").and_then(|v| v.as_str())?;
+            let detail = extract_tool_detail(name, item.get("input"));
+            if detail.is_empty() {
+                Some(name.to_string())
             } else {
-                None
+                Some(format!("{}: {}", name, detail))
             }
         })
         .collect()
+}
+
+/// Extract the most relevant argument from a tool_use input for display.
+fn extract_tool_detail(tool_name: &str, input: Option<&Value>) -> String {
+    let Some(input) = input.and_then(|v| v.as_object()) else {
+        return String::new();
+    };
+
+    let raw = match tool_name {
+        "Bash" => input.get("command").and_then(|v| v.as_str()).unwrap_or(""),
+        "Read" | "Write" | "Edit" => input.get("file_path").and_then(|v| v.as_str()).unwrap_or(""),
+        "Grep" => input.get("pattern").and_then(|v| v.as_str()).unwrap_or(""),
+        "Glob" => input.get("pattern").and_then(|v| v.as_str()).unwrap_or(""),
+        "Agent" => input
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or(""),
+        "Skill" => input.get("skill").and_then(|v| v.as_str()).unwrap_or(""),
+        _ => "",
+    };
+
+    // Truncate to first line, max 60 chars
+    let first_line = raw.lines().next().unwrap_or("");
+    if first_line.chars().count() > 60 {
+        format!("{}...", first_line.chars().take(60).collect::<String>())
+    } else {
+        first_line.to_string()
+    }
 }
 
 /// Quick check: does the raw line contain the pattern as a literal substring?
