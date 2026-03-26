@@ -2,6 +2,7 @@ mod jsonl;
 mod output;
 mod search;
 mod sessions;
+mod show;
 
 use std::path::{Path, PathBuf};
 
@@ -16,6 +17,7 @@ use search::{
     parse_date_end, parse_date_start, search_files_parallel, search_parallel, SearchConfig,
 };
 use sessions::collect_sessions_parallel;
+use show::{extract_messages_from_file, find_session_files, print_conversation};
 
 #[derive(Parser)]
 #[command(name = "claude-history", about = "Search Claude Code conversation logs")]
@@ -85,6 +87,16 @@ enum Commands {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+    },
+
+    /// Show conversation for a session
+    Show {
+        /// Session ID to display
+        session_id: String,
+
+        /// Max messages to show (0 = unlimited)
+        #[arg(short = 'n', long, default_value_t = 0)]
+        max_messages: usize,
     },
 }
 
@@ -157,6 +169,28 @@ fn main() -> Result<()> {
             } else {
                 print_sessions(&sessions);
             }
+        }
+        Commands::Show {
+            session_id,
+            max_messages,
+        } => {
+            let base_dir = get_projects_dir()?;
+            let files = find_session_files(&base_dir, &session_id)?;
+
+            if files.is_empty() {
+                anyhow::bail!("No session found with ID: {}", session_id);
+            }
+
+            let mut all_messages = Vec::new();
+            for file in &files {
+                let mut msgs = extract_messages_from_file(file, &session_id)?;
+                all_messages.append(&mut msgs);
+            }
+
+            // Sort by timestamp
+            all_messages.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+
+            print_conversation(&all_messages, max_messages);
         }
     }
 

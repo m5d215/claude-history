@@ -73,6 +73,86 @@ pub fn extract_text_into<'a>(record: &'a Value, buf: &'a mut String) -> &'a str 
     buf.as_str()
 }
 
+/// Extract only text blocks from a JSONL record (excludes thinking, tool_use input).
+/// Used by `show` command where thinking/tool details are not useful.
+pub fn extract_text_only<'a>(record: &'a Value, buf: &'a mut String) -> &'a str {
+    buf.clear();
+
+    let message = match record.get("message") {
+        Some(m) => m,
+        None => return "",
+    };
+
+    let content = match message.get("content") {
+        Some(c) => c,
+        None => return "",
+    };
+
+    match content {
+        Value::String(s) => return s.as_str(),
+        Value::Array(arr) => {
+            for item in arr {
+                if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
+                    if !buf.is_empty() {
+                        buf.push('\n');
+                    }
+                    buf.push_str(text);
+                }
+                // Skip thinking, tool_use input — only extract text blocks
+                if let Some(content_val) = item.get("content") {
+                    match content_val {
+                        Value::Array(inner) => {
+                            for inner_item in inner {
+                                if let Some(text) =
+                                    inner_item.get("text").and_then(|v| v.as_str())
+                                {
+                                    if !buf.is_empty() {
+                                        buf.push('\n');
+                                    }
+                                    buf.push_str(text);
+                                }
+                            }
+                        }
+                        Value::String(s) => {
+                            if !buf.is_empty() {
+                                buf.push('\n');
+                            }
+                            buf.push_str(s);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        _ => return "",
+    }
+
+    buf.as_str()
+}
+
+/// Extract tool_use names from an assistant message's content array.
+pub fn extract_tool_names(record: &Value) -> Vec<String> {
+    let Some(content) = record
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
+    else {
+        return Vec::new();
+    };
+
+    content
+        .iter()
+        .filter_map(|item| {
+            let item_type = item.get("type").and_then(|v| v.as_str())?;
+            if item_type == "tool_use" {
+                item.get("name").and_then(|v| v.as_str()).map(String::from)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 /// Quick check: does the raw line contain the pattern as a literal substring?
 /// This avoids JSON parsing for lines that can't possibly match.
 #[inline]

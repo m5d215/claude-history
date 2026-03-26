@@ -199,6 +199,45 @@ fn sessions_json_flag() {
         .stdout(predicate::str::starts_with("["));
 }
 
+// --- Show subcommand ---
+
+#[test]
+fn show_help() {
+    cmd()
+        .args(["show", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Show conversation for a session"));
+}
+
+#[test]
+fn show_missing_session_id() {
+    cmd()
+        .arg("show")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("<SESSION_ID>").or(predicate::str::contains("required")));
+}
+
+#[test]
+fn show_nonexistent_session() {
+    cmd()
+        .args(["show", "nonexistent-session-id-12345"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("No session found"));
+}
+
+#[test]
+fn show_max_messages_flag() {
+    // -n flag should be accepted
+    cmd()
+        .args(["show", "-n", "5", "nonexistent-session-id-12345"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("No session found"));
+}
+
 // --- Flag conflicts / edge cases ---
 
 #[test]
