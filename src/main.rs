@@ -76,6 +76,10 @@ enum Commands {
         #[arg(long)]
         project: Option<String>,
 
+        /// Exclude projects matching substring
+        #[arg(long)]
+        exclude_project: Vec<String>,
+
         /// Filter: start date (YYYY-MM-DD)
         #[arg(long)]
         since: Option<String>,
@@ -157,6 +161,7 @@ fn main() -> Result<()> {
         }
         Commands::Sessions {
             project,
+            exclude_project,
             since,
             until,
             json,
@@ -167,7 +172,15 @@ fn main() -> Result<()> {
             let base_dir = get_projects_dir()?;
             let jsonl_files = find_jsonl_files(&base_dir, project.as_deref())?;
 
-            let sessions = collect_sessions_parallel(&jsonl_files, since_dt, until_dt);
+            let mut sessions = collect_sessions_parallel(&jsonl_files, since_dt, until_dt);
+            if !exclude_project.is_empty() {
+                sessions.retain(|s| {
+                    let project_path = s.project.replace('-', "/");
+                    !exclude_project.iter().any(|ex| {
+                        project_path.contains(ex.as_str()) || s.project.contains(ex.as_str())
+                    })
+                });
+            }
             if json {
                 print_sessions_json(&sessions);
             } else {
