@@ -1,6 +1,7 @@
 mod jsonl;
 mod output;
 mod search;
+mod sessions;
 
 use std::path::{Path, PathBuf};
 
@@ -8,10 +9,13 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use walkdir::WalkDir;
 
-use output::{print_default, print_files_only, print_json, print_verbose};
+use output::{
+    print_default, print_files_only, print_json, print_sessions, print_sessions_json, print_verbose,
+};
 use search::{
     parse_date_end, parse_date_start, search_files_parallel, search_parallel, SearchConfig,
 };
+use sessions::collect_sessions_parallel;
 
 #[derive(Parser)]
 #[command(name = "claude-history", about = "Search Claude Code conversation logs")]
@@ -62,6 +66,25 @@ enum Commands {
         /// Characters of context around match
         #[arg(short = 'C', long, default_value_t = 80)]
         context_chars: usize,
+    },
+
+    /// List sessions with metadata
+    Sessions {
+        /// Filter by project path (substring match)
+        #[arg(long)]
+        project: Option<String>,
+
+        /// Filter: start date (YYYY-MM-DD)
+        #[arg(long)]
+        since: Option<String>,
+
+        /// Filter: end date (YYYY-MM-DD)
+        #[arg(long)]
+        until: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -114,6 +137,25 @@ fn main() -> Result<()> {
                 } else {
                     print_default(&matches);
                 }
+            }
+        }
+        Commands::Sessions {
+            project,
+            since,
+            until,
+            json,
+        } => {
+            let since_dt = since.as_deref().map(parse_date_start).transpose()?;
+            let until_dt = until.as_deref().map(parse_date_end).transpose()?;
+
+            let base_dir = get_projects_dir()?;
+            let jsonl_files = find_jsonl_files(&base_dir, project.as_deref())?;
+
+            let sessions = collect_sessions_parallel(&jsonl_files, since_dt, until_dt);
+            if json {
+                print_sessions_json(&sessions);
+            } else {
+                print_sessions(&sessions);
             }
         }
     }

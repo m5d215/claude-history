@@ -149,6 +149,56 @@ fn search_max_results_limits_output() {
         .stderr(predicate::str::contains("1 matches found"));
 }
 
+// --- Sessions subcommand ---
+
+#[test]
+fn sessions_help() {
+    cmd()
+        .args(["sessions", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("List sessions with metadata"));
+}
+
+#[test]
+fn sessions_runs_without_error() {
+    cmd().arg("sessions").assert().success();
+}
+
+#[test]
+fn sessions_project_filter() {
+    cmd()
+        .args(["sessions", "--project", "some-project"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn sessions_date_filters() {
+    cmd()
+        .args(["sessions", "--since", "2026-01-01", "--until", "2026-12-31"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn sessions_invalid_date() {
+    cmd()
+        .args(["sessions", "--since", "not-a-date"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Invalid date format"));
+}
+
+#[test]
+fn sessions_json_flag() {
+    cmd()
+        .args(["sessions", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("["));
+}
+
 // --- Flag conflicts / edge cases ---
 
 #[test]

@@ -5,6 +5,7 @@ use chrono::DateTime;
 use serde_json::Value;
 
 use crate::search::SearchMatch;
+use crate::sessions::SessionInfo;
 
 pub fn print_default(matches: &[SearchMatch]) {
     let stdout = std::io::stdout();
@@ -98,6 +99,51 @@ pub fn extract_snippet(text: &str, start: usize, end: usize, context_chars: usiz
     }
 
     snippet.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+pub fn print_sessions(sessions: &[SessionInfo]) {
+    let stdout = std::io::stdout();
+    let mut out = std::io::BufWriter::new(stdout.lock());
+
+    // Calculate max project width for alignment
+    let max_project = sessions
+        .iter()
+        .map(|s| s.project.len())
+        .max()
+        .unwrap_or(0);
+
+    for s in sessions {
+        let started = format_timestamp(&s.started_at);
+        let last = format_timestamp(&s.last_activity);
+        let _ = writeln!(
+            out,
+            "{}\t{:<pw$}\t{}\t{}\t{}",
+            s.session_id,
+            s.project,
+            started,
+            last,
+            s.first_user_message,
+            pw = max_project,
+        );
+    }
+}
+
+pub fn print_sessions_json(sessions: &[SessionInfo]) {
+    let json_sessions: Vec<Value> = sessions
+        .iter()
+        .map(|s| {
+            serde_json::json!({
+                "sessionId": s.session_id,
+                "filePath": s.file_path.to_string_lossy(),
+                "project": s.project,
+                "startedAt": s.started_at,
+                "lastActivity": s.last_activity,
+                "firstUserMessage": s.first_user_message,
+            })
+        })
+        .collect();
+
+    println!("{}", serde_json::to_string(&json_sessions).unwrap());
 }
 
 pub fn extract_project_name(file_path: &std::path::Path) -> String {
