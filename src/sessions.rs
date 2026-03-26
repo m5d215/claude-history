@@ -16,6 +16,7 @@ pub struct SessionInfo {
     pub session_id: String,
     pub file_path: PathBuf,
     pub project: String,
+    pub cwd: String,
     pub started_at: String,
     pub last_activity: String,
     pub first_user_message: String,
@@ -25,6 +26,7 @@ struct SessionInfoBuilder {
     session_id: String,
     file_path: PathBuf,
     project: String,
+    cwd: Option<String>,
     earliest_timestamp: String,
     latest_timestamp: String,
     first_user_message: Option<String>,
@@ -36,6 +38,7 @@ impl SessionInfoBuilder {
             session_id,
             file_path,
             project,
+            cwd: None,
             earliest_timestamp: timestamp.clone(),
             latest_timestamp: timestamp,
             first_user_message: None,
@@ -56,6 +59,7 @@ impl SessionInfoBuilder {
             session_id: self.session_id,
             file_path: self.file_path,
             project: self.project,
+            cwd: self.cwd.unwrap_or_default(),
             started_at: self.earliest_timestamp,
             last_activity: self.latest_timestamp,
             first_user_message: self.first_user_message.unwrap_or_default(),
@@ -89,6 +93,9 @@ pub fn collect_sessions_parallel(
                 if existing.first_user_message.is_empty() && !session.first_user_message.is_empty()
                 {
                     existing.first_user_message = session.first_user_message.clone();
+                }
+                if existing.cwd.is_empty() && !session.cwd.is_empty() {
+                    existing.cwd = session.cwd.clone();
                 }
             })
             .or_insert(session);
@@ -150,6 +157,13 @@ pub fn extract_sessions_from_file(
             });
 
         builder.update_timestamp(&timestamp);
+
+        // Capture cwd from the first record that has it
+        if builder.cwd.is_none() {
+            if let Some(cwd) = record.get("cwd").and_then(|v| v.as_str()) {
+                builder.cwd = Some(cwd.to_string());
+            }
+        }
 
         // Capture first user message (skip system-injected content like XML tags)
         let record_type = record.get("type").and_then(|v| v.as_str()).unwrap_or("");

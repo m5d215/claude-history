@@ -136,6 +136,7 @@ pub fn print_sessions_json(sessions: &[SessionInfo]) {
                 "sessionId": s.session_id,
                 "filePath": s.file_path.to_string_lossy(),
                 "project": s.project,
+                "cwd": s.cwd,
                 "startedAt": s.started_at,
                 "lastActivity": s.last_activity,
                 "firstUserMessage": s.first_user_message,
