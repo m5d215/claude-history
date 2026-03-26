@@ -18,6 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Create Claude projects directory
+        run: mkdir -p ~/.claude/projects
+
       - name: Build
         run: cargo build --release
 
