@@ -97,6 +97,10 @@ enum Commands {
         /// Max messages to show (0 = unlimited)
         #[arg(short = 'n', long, default_value_t = 0)]
         max_messages: usize,
+
+        /// Color output: always, never, auto (default: auto)
+        #[arg(long, default_value = "auto")]
+        color: String,
     },
 }
 
@@ -173,6 +177,7 @@ fn main() -> Result<()> {
         Commands::Show {
             session_id,
             max_messages,
+            color,
         } => {
             let base_dir = get_projects_dir()?;
             let files = find_session_files(&base_dir, &session_id)?;
@@ -190,7 +195,12 @@ fn main() -> Result<()> {
             // Sort by timestamp
             all_messages.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
-            print_conversation(&all_messages, max_messages);
+            let use_color = match color.as_str() {
+                "always" => true,
+                "never" => false,
+                _ => std::io::IsTerminal::is_terminal(&std::io::stdout()),
+            };
+            print_conversation(&all_messages, max_messages, use_color);
         }
     }
 

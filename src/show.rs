@@ -199,7 +199,7 @@ pub fn extract_messages_from_file(
 const MAX_LINES_PER_MESSAGE: usize = 20;
 
 /// Print conversation messages to stdout.
-pub fn print_conversation(messages: &[ConversationMessage], max_messages: usize) {
+pub fn print_conversation(messages: &[ConversationMessage], max_messages: usize, use_color: bool) {
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
 
@@ -218,10 +218,23 @@ pub fn print_conversation(messages: &[ConversationMessage], max_messages: usize)
 
         match msg.role.as_str() {
             "tool" => {
-                let _ = writeln!(out, "[tool] {}", msg.content);
+                if use_color {
+                    let _ = writeln!(out, "\x1b[33m[tool] {}\x1b[0m", msg.content);
+                } else {
+                    let _ = writeln!(out, "[tool] {}", msg.content);
+                }
             }
             role => {
-                let _ = writeln!(out, "[{}] {}", role, ts);
+                let (open, close) = if use_color {
+                    match role {
+                        "user" => ("\x1b[32m", "\x1b[0m"),
+                        "assistant" => ("\x1b[36m", "\x1b[0m"),
+                        _ => ("", ""),
+                    }
+                } else {
+                    ("", "")
+                };
+                let _ = writeln!(out, "{}[{}] {}{}", open, role, ts, close);
                 let lines: Vec<&str> = msg.content.lines().collect();
                 if lines.len() > MAX_LINES_PER_MESSAGE {
                     for line in &lines[..MAX_LINES_PER_MESSAGE] {
