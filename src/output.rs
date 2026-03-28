@@ -69,7 +69,7 @@ pub fn print_files_only(files: &[PathBuf]) {
 
 pub fn format_timestamp(ts: &str) -> String {
     DateTime::parse_from_rfc3339(ts)
-        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+        .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(|_| ts.to_string())
 }
 
@@ -195,7 +195,12 @@ mod tests {
     #[test]
     fn format_valid_timestamp() {
         let result = format_timestamp("2026-03-26T06:00:00.000Z");
-        assert_eq!(result, "2026-03-26 06:00");
+        let expected = chrono::DateTime::parse_from_rfc3339("2026-03-26T06:00:00.000Z")
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .format("%Y-%m-%d %H:%M")
+            .to_string();
+        assert_eq!(result, expected);
     }
 
     #[test]
