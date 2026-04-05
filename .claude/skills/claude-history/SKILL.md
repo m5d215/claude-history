@@ -1,5 +1,6 @@
 ---
 name: claude-history
+user-invocable: false
 description: Search past Claude Code sessions. TRIGGER when you need to search, grep, or read anything under ~/.claude/projects/.
 ---
 
