@@ -8,6 +8,14 @@ Existing memory tools summarize on write, irreversibly discarding information. c
 
 ## Install
 
+### Homebrew (recommended)
+
+```sh
+brew install m5d215/tap/claude-history
+```
+
+### cargo
+
 ```sh
 cargo install --git https://github.com/m5d215/claude-history
 ```
