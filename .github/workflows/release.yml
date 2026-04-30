@@ -7,17 +7,52 @@ on:
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x86_64
+          - os: macos-latest
+            target: macos-arm64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package
+        run: |
+          staging="claude-history-${{ matrix.target }}"
+          mkdir -p "$staging"
+          cp target/release/claude-history "$staging/"
+          cp README.md "$staging/"
+          tar czf "${staging}.tar.gz" -C "$staging" .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: claude-history-${{ matrix.target }}
+          path: claude-history-${{ matrix.target }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh release create "${{ github.ref_name }}" --generate-notes
+        run: gh release create "${{ github.ref_name }}" --generate-notes claude-history-*.tar.gz
 
       - name: Checkout homebrew-tap
         uses: actions/checkout@v6
@@ -31,10 +66,25 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          sed -i -E "s|tag: \"v[0-9]+\.[0-9]+\.[0-9]+\"|tag: \"${TAG}\"|" Formula/claude-history.rb
+          version="${TAG#v}"
+          formula="Formula/claude-history.rb"
+
+          sed -i -E "s|version \"[^\"]+\"|version \"${version}\"|" "$formula"
+
+          # 各プラットフォームの url 行と直後の sha256 行をペアで更新。
+          # sed の N で次行を pattern space に追加してから一括置換する。
+          for target in macos-arm64 linux-x86_64; do
+            sha=$(shasum -a 256 "../claude-history-${target}.tar.gz" | cut -d' ' -f1)
+            sed -i -E "/-${target}\.tar\.gz\"$/{
+              N
+              s|download/v[0-9.]+/|download/${TAG}/|
+              s|sha256 \"[a-f0-9]+\"|sha256 \"${sha}\"|
+            }" "$formula"
+          done
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/claude-history.rb
+          git add "$formula"
           if git diff --cached --quiet; then
             echo "formula already at ${TAG}; skipping commit"
             exit 0
