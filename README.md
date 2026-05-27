@@ -68,16 +68,39 @@ Browse sessions interactively with fzf:
 
 ```sh
 claude-history sessions --json \
-  | jq -r '.[] | [.cwd, .sessionId, .project, .lastActivity, .firstUserMessage] | @tsv' \
+  | jq -r '.[] | [.cwd, .sessionId, .profile, .project, .lastActivity, .firstUserMessage] | @tsv' \
   | fzf \
-      --with-nth=2.. \
+      --with-nth=3.. \
       --preview 'claude-history show --color=always --max-messages=10 {2}' \
       --bind 'enter:become(echo -n " cd {1} && claude --resume {2}" | pbcopy)'
 ```
 
+## Configuration
+
+By default, claude-history searches `$XDG_CONFIG_HOME/claude` and `~/.claude` (whichever contains `projects/`). You can override the lookup with, in order of precedence:
+
+1. `--config-dir <paths>` — comma-separated list, for one-off overrides
+2. `~/.config/claude-history/config.toml` — persistent, useful when `CLAUDE_CONFIG_DIR` is always set to a single profile but you want `claude-history` to span all of them
+3. `CLAUDE_CONFIG_DIR` — comma-separated list, same syntax as ccusage
+4. Default discovery (above)
+
+Each path is treated as a Claude config directory containing a `projects/` subdirectory. Passing the `projects/` path itself also works.
+
+Example `config.toml` for a multi-profile setup:
+
+```toml
+config_dirs = [
+    "~/.config/claude/profiles/personal",
+    "~/.config/claude/profiles/work",
+    "~/.claude",
+]
+```
+
+Use `--profile <name>` on any subcommand to restrict to a single profile. Profile names are derived from the directory basename, except `~/.claude` and `$XDG_CONFIG_HOME/claude`, which are named `default`.
+
 ## How it works
 
-Streams JSONL conversation logs under `~/.claude/projects/` via BufReader and matches with regex.
+Streams JSONL conversation logs under the configured `projects/` directories via BufReader and matches with regex.
 
 - Searches only `user` and `assistant` messages
 - Handles both string and array formats of the `content` field

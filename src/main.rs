@@ -1,18 +1,18 @@
+mod config;
 mod jsonl;
 mod output;
+mod path;
 mod search;
 mod sessions;
 mod show;
 
-use std::path::{Path, PathBuf};
-
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use walkdir::WalkDir;
 
 use output::{
     print_default, print_files_only, print_json, print_sessions, print_sessions_json, print_verbose,
 };
+use path::{filter_by_profile, find_jsonl_files, resolve_projects_dirs};
 use search::{
     parse_date_end, parse_date_start, search_files_parallel, search_parallel, SearchConfig,
 };
@@ -22,6 +22,14 @@ use show::{extract_messages_from_file, find_session_files, print_conversation};
 #[derive(Parser)]
 #[command(name = "claude-history", about = "Search Claude Code conversation logs")]
 struct Cli {
+    /// Override config directories (comma-separated). Takes precedence over config file and CLAUDE_CONFIG_DIR.
+    #[arg(long, global = true)]
+    config_dir: Option<String>,
+
+    /// Restrict to a single profile by name (e.g. "personal", "default").
+    #[arg(long, global = true)]
+    profile: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -111,6 +119,13 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    let file_cfg = config::load().context("Failed to load config file")?;
+    let config_file_dirs = file_cfg
+        .as_ref()
+        .and_then(|c| c.config_dirs.as_deref());
+    let projects_dirs = resolve_projects_dirs(cli.config_dir.as_deref(), config_file_dirs)?;
+    let projects_dirs = filter_by_profile(projects_dirs, cli.profile.as_deref())?;
+
     match cli.command {
         Commands::Search {
             pattern,
@@ -134,8 +149,7 @@ fn main() -> Result<()> {
             let since_dt = since.as_deref().map(parse_date_start).transpose()?;
             let until_dt = until.as_deref().map(parse_date_end).transpose()?;
 
-            let base_dir = get_projects_dir()?;
-            let jsonl_files = find_jsonl_files(&base_dir, project.as_deref())?;
+            let jsonl_files = find_jsonl_files(&projects_dirs, project.as_deref())?;
 
             let config = SearchConfig {
                 re,
@@ -149,7 +163,7 @@ fn main() -> Result<()> {
                 let matched_files = search_files_parallel(&jsonl_files, &config);
                 print_files_only(&matched_files);
             } else {
-                let matches = search_parallel(&jsonl_files, &config);
+                let matches = search_parallel(&jsonl_files, &projects_dirs, &config);
                 if json {
                     print_json(&matches);
                 } else if verbose {
@@ -169,10 +183,10 @@ fn main() -> Result<()> {
             let since_dt = since.as_deref().map(parse_date_start).transpose()?;
             let until_dt = until.as_deref().map(parse_date_end).transpose()?;
 
-            let base_dir = get_projects_dir()?;
-            let jsonl_files = find_jsonl_files(&base_dir, project.as_deref())?;
+            let jsonl_files = find_jsonl_files(&projects_dirs, project.as_deref())?;
 
-            let mut sessions = collect_sessions_parallel(&jsonl_files, since_dt, until_dt);
+            let mut sessions =
+                collect_sessions_parallel(&jsonl_files, &projects_dirs, since_dt, until_dt);
             if !exclude_project.is_empty() {
                 sessions.retain(|s| {
                     let project_path = s.project.replace('-', "/");
@@ -192,8 +206,7 @@ fn main() -> Result<()> {
             max_messages,
             color,
         } => {
-            let base_dir = get_projects_dir()?;
-            let files = find_session_files(&base_dir, &session_id)?;
+            let files = find_session_files(&projects_dirs, &session_id)?;
 
             if files.is_empty() {
                 anyhow::bail!("No session found with ID: {}", session_id);
@@ -218,42 +231,4 @@ fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn get_projects_dir() -> Result<PathBuf> {
-    let home = dirs::home_dir().context("Could not determine home directory")?;
-    let dir = home.join(".claude").join("projects");
-    if !dir.exists() {
-        anyhow::bail!("Projects directory not found: {}", dir.display());
-    }
-    Ok(dir)
-}
-
-fn find_jsonl_files(base_dir: &Path, project_filter: Option<&str>) -> Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-
-    for entry in WalkDir::new(base_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "jsonl") {
-            if let Some(filter) = project_filter {
-                if let Ok(rel) = path.strip_prefix(base_dir) {
-                    let project_dir = rel
-                        .components()
-                        .next()
-                        .map(|c| c.as_os_str().to_string_lossy().to_string())
-                        .unwrap_or_default();
-                    let project_path = project_dir.replace('-', "/");
-                    if !project_path.contains(filter) && !project_dir.contains(filter) {
-                        continue;
-                    }
-                }
-            }
-            files.push(path.to_path_buf());
-        }
-    }
-
-    Ok(files)
 }

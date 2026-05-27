@@ -9,12 +9,13 @@ use rayon::prelude::*;
 use serde_json::Value;
 
 use crate::jsonl::extract_text_into;
-use crate::output::extract_project_name;
+use crate::path::{extract_project_info, ProjectsDir};
 use crate::search::{parse_timestamp, BUF_SIZE};
 
 pub struct SessionInfo {
     pub session_id: String,
     pub file_path: PathBuf,
+    pub profile: String,
     pub project: String,
     pub cwd: String,
     pub started_at: String,
@@ -25,6 +26,7 @@ pub struct SessionInfo {
 struct SessionInfoBuilder {
     session_id: String,
     file_path: PathBuf,
+    profile: String,
     project: String,
     cwd: Option<String>,
     earliest_timestamp: String,
@@ -33,10 +35,17 @@ struct SessionInfoBuilder {
 }
 
 impl SessionInfoBuilder {
-    fn new(session_id: String, file_path: PathBuf, project: String, timestamp: String) -> Self {
+    fn new(
+        session_id: String,
+        file_path: PathBuf,
+        profile: String,
+        project: String,
+        timestamp: String,
+    ) -> Self {
         Self {
             session_id,
             file_path,
+            profile,
             project,
             cwd: None,
             earliest_timestamp: timestamp.clone(),
@@ -58,6 +67,7 @@ impl SessionInfoBuilder {
         SessionInfo {
             session_id: self.session_id,
             file_path: self.file_path,
+            profile: self.profile,
             project: self.project,
             cwd: self.cwd.unwrap_or_default(),
             started_at: self.earliest_timestamp,
@@ -69,12 +79,15 @@ impl SessionInfoBuilder {
 
 pub fn collect_sessions_parallel(
     files: &[PathBuf],
+    projects_dirs: &[ProjectsDir],
     since: Option<DateTime<Utc>>,
     until: Option<DateTime<Utc>>,
 ) -> Vec<SessionInfo> {
     let file_results: Vec<Vec<SessionInfo>> = files
         .par_iter()
-        .map(|file_path| extract_sessions_from_file(file_path, since, until).unwrap_or_default())
+        .map(|file_path| {
+            extract_sessions_from_file(file_path, projects_dirs, since, until).unwrap_or_default()
+        })
         .collect();
 
     // Merge sessions with the same session_id across files
@@ -111,12 +124,13 @@ pub fn collect_sessions_parallel(
 
 pub fn extract_sessions_from_file(
     file_path: &Path,
+    projects_dirs: &[ProjectsDir],
     since: Option<DateTime<Utc>>,
     until: Option<DateTime<Utc>>,
 ) -> Result<Vec<SessionInfo>> {
     let file = File::open(file_path)?;
     let reader = BufReader::with_capacity(BUF_SIZE, file);
-    let project = extract_project_name(file_path);
+    let (project, profile) = extract_project_info(file_path, projects_dirs);
     let mut builders: HashMap<String, SessionInfoBuilder> = HashMap::new();
     let mut text_buf = String::new();
 
@@ -151,6 +165,7 @@ pub fn extract_sessions_from_file(
                 SessionInfoBuilder::new(
                     session_id,
                     file_path.to_path_buf(),
+                    profile.clone(),
                     project.clone(),
                     timestamp.clone(),
                 )
@@ -280,7 +295,7 @@ mod tests {
                 }),
             ],
         );
-        let sessions = extract_sessions_from_file(&path, None, None).unwrap();
+        let sessions = extract_sessions_from_file(&path, &[], None, None).unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].session_id, "sess-1");
         assert_eq!(sessions[0].started_at, "2026-03-26T10:00:00Z");
@@ -308,7 +323,7 @@ mod tests {
                 }),
             ],
         );
-        let sessions = extract_sessions_from_file(&path, None, None).unwrap();
+        let sessions = extract_sessions_from_file(&path, &[], None, None).unwrap();
         assert_eq!(sessions.len(), 2);
     }
 
@@ -333,7 +348,7 @@ mod tests {
                 }),
             ],
         );
-        let sessions = extract_sessions_from_file(&path, since, None).unwrap();
+        let sessions = extract_sessions_from_file(&path, &[], since, None).unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].session_id, "sess-new");
     }
@@ -349,7 +364,7 @@ mod tests {
                 "timestamp": "2026-03-26T10:00:00Z",
             })],
         );
-        let sessions = extract_sessions_from_file(&path, None, None).unwrap();
+        let sessions = extract_sessions_from_file(&path, &[], None, None).unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].first_user_message, "");
     }
@@ -374,7 +389,7 @@ mod tests {
                 }),
             ],
         );
-        let sessions = extract_sessions_from_file(&path, None, None).unwrap();
+        let sessions = extract_sessions_from_file(&path, &[], None, None).unwrap();
         assert_eq!(sessions[0].first_user_message, "first question");
     }
 
@@ -397,7 +412,7 @@ mod tests {
             .unwrap()
         )
         .unwrap();
-        let sessions = extract_sessions_from_file(&path, None, None).unwrap();
+        let sessions = extract_sessions_from_file(&path, &[], None, None).unwrap();
         assert_eq!(sessions.len(), 1);
     }
 
@@ -438,7 +453,7 @@ mod tests {
         .unwrap();
 
         let files = vec![path1, path2];
-        let sessions = collect_sessions_parallel(&files, None, None);
+        let sessions = collect_sessions_parallel(&files, &[], None, None);
         assert_eq!(sessions.len(), 2);
         assert_eq!(sessions[0].session_id, "sess-new");
         assert_eq!(sessions[1].session_id, "sess-old");

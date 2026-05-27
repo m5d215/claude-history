@@ -28,6 +28,7 @@ pub fn print_verbose(matches: &[SearchMatch]) {
         let _ = writeln!(out, "Session:  {}", m.session_id);
         let _ = writeln!(out, "Time:     {}", ts);
         let _ = writeln!(out, "Type:     {}", m.msg_type);
+        let _ = writeln!(out, "Profile:  {}", m.profile);
         let _ = writeln!(out, "Project:  {}", m.project);
         let _ = writeln!(out, "Branch:   {}", m.git_branch);
         let _ = writeln!(out, "Cwd:      {}", m.cwd);
@@ -47,6 +48,7 @@ pub fn print_json(matches: &[SearchMatch]) {
                 "timestamp": m.timestamp,
                 "type": m.msg_type,
                 "matchedText": m.matched_text,
+                "profile": m.profile,
                 "project": m.project,
                 "gitBranch": m.git_branch,
                 "cwd": m.cwd,
@@ -105,24 +107,22 @@ pub fn print_sessions(sessions: &[SessionInfo]) {
     let stdout = std::io::stdout();
     let mut out = std::io::BufWriter::new(stdout.lock());
 
-    // Calculate max project width for alignment
-    let max_project = sessions
-        .iter()
-        .map(|s| s.project.len())
-        .max()
-        .unwrap_or(0);
+    let max_profile = sessions.iter().map(|s| s.profile.len()).max().unwrap_or(0);
+    let max_project = sessions.iter().map(|s| s.project.len()).max().unwrap_or(0);
 
     for s in sessions {
         let started = format_timestamp(&s.started_at);
         let last = format_timestamp(&s.last_activity);
         let _ = writeln!(
             out,
-            "{}\t{:<pw$}\t{}\t{}\t{}",
+            "{}\t{:<fw$}\t{:<pw$}\t{}\t{}\t{}",
             s.session_id,
+            s.profile,
             s.project,
             started,
             last,
             s.first_user_message,
+            fw = max_profile,
             pw = max_project,
         );
     }
@@ -135,6 +135,7 @@ pub fn print_sessions_json(sessions: &[SessionInfo]) {
             serde_json::json!({
                 "sessionId": s.session_id,
                 "filePath": s.file_path.to_string_lossy(),
+                "profile": s.profile,
                 "project": s.project,
                 "cwd": s.cwd,
                 "startedAt": s.started_at,
@@ -145,19 +146,6 @@ pub fn print_sessions_json(sessions: &[SessionInfo]) {
         .collect();
 
     println!("{}", serde_json::to_string(&json_sessions).unwrap());
-}
-
-pub fn extract_project_name(file_path: &std::path::Path) -> String {
-    let home = dirs::home_dir().unwrap_or_default();
-    let projects_dir = home.join(".claude").join("projects");
-    if let Ok(rel) = file_path.strip_prefix(&projects_dir) {
-        rel.components()
-            .next()
-            .map(|c| c.as_os_str().to_string_lossy().to_string())
-            .unwrap_or_default()
-    } else {
-        String::new()
-    }
 }
 
 #[cfg(test)]
