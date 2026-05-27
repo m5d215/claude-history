@@ -12,7 +12,8 @@ use regex::Regex;
 use serde_json::Value;
 
 use crate::jsonl::{extract_literal_prefix, extract_text_into, line_might_match};
-use crate::output::{extract_project_name, extract_snippet};
+use crate::output::extract_snippet;
+use crate::path::{extract_project_info, ProjectsDir};
 
 pub const BUF_SIZE: usize = 64 * 1024; // 64 KB buffer
 
@@ -22,6 +23,7 @@ pub struct SearchMatch {
     pub timestamp: String,
     pub msg_type: String,
     pub matched_text: String,
+    pub profile: String,
     pub project: String,
     pub git_branch: String,
     pub cwd: String,
@@ -82,7 +84,11 @@ pub fn search_files_parallel(files: &[PathBuf], config: &SearchConfig) -> Vec<Pa
     matched
 }
 
-pub fn search_parallel(files: &[PathBuf], config: &SearchConfig) -> Vec<SearchMatch> {
+pub fn search_parallel(
+    files: &[PathBuf],
+    projects_dirs: &[ProjectsDir],
+    config: &SearchConfig,
+) -> Vec<SearchMatch> {
     let done = Arc::new(AtomicBool::new(false));
     let count = Arc::new(AtomicUsize::new(0));
 
@@ -93,7 +99,7 @@ pub fn search_parallel(files: &[PathBuf], config: &SearchConfig) -> Vec<SearchMa
                 return Vec::new();
             }
             let mut matches = Vec::new();
-            let _ = search_file(file_path, config, &mut matches);
+            let _ = search_file(file_path, projects_dirs, config, &mut matches);
             if !matches.is_empty() && config.max_results > 0 {
                 let prev = count.fetch_add(matches.len(), Ordering::Relaxed);
                 if prev + matches.len() >= config.max_results {
@@ -159,6 +165,7 @@ pub fn search_file_exists(file_path: &Path, config: &SearchConfig) -> Result<boo
 
 pub fn search_file(
     file_path: &Path,
+    projects_dirs: &[ProjectsDir],
     config: &SearchConfig,
     matches: &mut Vec<SearchMatch>,
 ) -> Result<()> {
@@ -166,7 +173,7 @@ pub fn search_file(
     let reader = BufReader::with_capacity(BUF_SIZE, file);
     let mut seen_request_ids: HashSet<String> = HashSet::new();
     let literal_prefix = extract_literal_prefix(config.re.as_str());
-    let project = extract_project_name(file_path);
+    let (project, profile) = extract_project_info(file_path, projects_dirs);
     let mut text_buf = String::new();
 
     for line in reader.lines() {
@@ -243,6 +250,7 @@ pub fn search_file(
                 timestamp,
                 msg_type: record_type,
                 matched_text: snippet,
+                profile: profile.clone(),
                 project: project.clone(),
                 git_branch,
                 cwd,
@@ -497,7 +505,7 @@ mod tests {
         );
         let config = make_config("Terraform");
         let mut matches = Vec::new();
-        search_file(&path, &config, &mut matches).unwrap();
+        search_file(&path, &[], &config, &mut matches).unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].session_id, "sess-1");
         assert_eq!(matches[0].msg_type, "user");
@@ -536,7 +544,7 @@ mod tests {
         );
         let config = make_config("Terraform");
         let mut matches = Vec::new();
-        search_file(&path, &config, &mut matches).unwrap();
+        search_file(&path, &[], &config, &mut matches).unwrap();
         assert_eq!(matches.len(), 1);
         assert!(matches[0].matched_text.contains("final"));
     }
@@ -565,7 +573,7 @@ mod tests {
         );
         let config = make_config_with_dates("Terraform", Some("2026-01-01"), None);
         let mut matches = Vec::new();
-        search_file(&path, &config, &mut matches).unwrap();
+        search_file(&path, &[], &config, &mut matches).unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].session_id, "sess-new");
     }
@@ -585,7 +593,7 @@ mod tests {
         );
         let config = make_config("xyznonexistent");
         let mut matches = Vec::new();
-        search_file(&path, &config, &mut matches).unwrap();
+        search_file(&path, &[], &config, &mut matches).unwrap();
         assert_eq!(matches.len(), 0);
     }
 
@@ -645,7 +653,7 @@ mod tests {
         .unwrap();
         let config = make_config("Terraform");
         let mut matches = Vec::new();
-        search_file(&path, &config, &mut matches).unwrap();
+        search_file(&path, &[], &config, &mut matches).unwrap();
         assert_eq!(matches.len(), 1);
     }
 
@@ -682,7 +690,7 @@ mod tests {
         );
         let config = make_config("TARGET_WORD");
         let mut matches = Vec::new();
-        search_file(&path, &config, &mut matches).unwrap();
+        search_file(&path, &[], &config, &mut matches).unwrap();
         assert_eq!(matches.len(), 2);
     }
 }

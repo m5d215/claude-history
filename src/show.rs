@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use crate::jsonl::{extract_text_only, extract_tool_summaries};
 use crate::output::format_timestamp;
+use crate::path::ProjectsDir;
 use crate::search::BUF_SIZE;
 
 pub struct ConversationMessage {
@@ -18,24 +19,29 @@ pub struct ConversationMessage {
 
 /// Find JSONL files that contain the given session_id.
 /// Tries filename match first (UUID.jsonl), then falls back to scanning content.
-pub fn find_session_files(base_dir: &Path, session_id: &str) -> Result<Vec<PathBuf>> {
+pub fn find_session_files(
+    projects_dirs: &[ProjectsDir],
+    session_id: &str,
+) -> Result<Vec<PathBuf>> {
     let mut matched = Vec::new();
     let mut candidates = Vec::new();
 
-    for entry in walkdir::WalkDir::new(base_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        let path = entry.path();
-        if path.extension().is_none_or(|ext| ext != "jsonl") {
-            continue;
-        }
+    for pd in projects_dirs {
+        for entry in walkdir::WalkDir::new(&pd.path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if path.extension().is_none_or(|ext| ext != "jsonl") {
+                continue;
+            }
 
-        // Fast path: filename stem matches session_id
-        if path.file_stem().is_some_and(|stem| stem.to_string_lossy() == session_id) {
-            matched.push(path.to_path_buf());
-        } else {
-            candidates.push(path.to_path_buf());
+            // Fast path: filename stem matches session_id
+            if path.file_stem().is_some_and(|stem| stem.to_string_lossy() == session_id) {
+                matched.push(path.to_path_buf());
+            } else {
+                candidates.push(path.to_path_buf());
+            }
         }
     }
 
@@ -263,6 +269,13 @@ mod tests {
         path
     }
 
+    fn pd(dir: &Path) -> Vec<ProjectsDir> {
+        vec![ProjectsDir {
+            path: dir.to_path_buf(),
+            profile: "test".to_string(),
+        }]
+    }
+
     // --- find_session_files ---
 
     #[test]
@@ -278,7 +291,7 @@ mod tests {
                 "message": { "content": "hello" },
             })],
         );
-        let files = find_session_files(dir.path(), "abc-123").unwrap();
+        let files = find_session_files(&pd(dir.path()),"abc-123").unwrap();
         assert_eq!(files.len(), 1);
     }
 
@@ -295,7 +308,7 @@ mod tests {
                 "message": { "content": "hello" },
             })],
         );
-        let files = find_session_files(dir.path(), "target-session").unwrap();
+        let files = find_session_files(&pd(dir.path()),"target-session").unwrap();
         assert_eq!(files.len(), 1);
     }
 
@@ -312,7 +325,7 @@ mod tests {
                 "message": { "content": "hello" },
             })],
         );
-        let files = find_session_files(dir.path(), "nonexistent").unwrap();
+        let files = find_session_files(&pd(dir.path()),"nonexistent").unwrap();
         assert!(files.is_empty());
     }
 
